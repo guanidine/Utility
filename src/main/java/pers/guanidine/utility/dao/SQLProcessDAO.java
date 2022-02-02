@@ -13,23 +13,10 @@ import java.util.concurrent.Executor;
  * @author Guanidine Beryllium
  */
 public class SQLProcessDAO {
-
-    String driver;
-    String url;
-    String uname;
-    String passwd;
-
-    private static volatile SQLProcessDAO sqlProcessor;
-
-    private SQLProcessDAO(String driver, String url, String uname, String passwd) {
-        if (sqlProcessor != null) {
-            throw new RuntimeException("就你会用反射啊（战术后仰）...");
-        }
-        this.driver = driver;
-        this.url = url;
-        this.uname = uname;
-        this.passwd = passwd;
-    }
+    private final String driver;
+    private final String url;
+    private final String uname;
+    private final String passwd;
 
     /**
      * 初始化SQL连接。
@@ -38,26 +25,24 @@ public class SQLProcessDAO {
      * @param url    连接URL
      * @param uname  SQL用户名
      * @param passwd SQL密码
-     * @return 数据库查询实例
      */
-    public static SQLProcessDAO getInstance(String driver, String url, String uname, String passwd) {
-        if (sqlProcessor == null) {
-            synchronized (SQLProcessDAO.class) {
-                if (sqlProcessor == null) {
-                    sqlProcessor = new SQLProcessDAO(driver, url, uname, passwd);
-                }
-            }
-        }
-        return sqlProcessor;
+    public SQLProcessDAO(String driver, String url, String uname, String passwd) {
+        this.driver = driver;
+        this.url = url;
+        this.uname = uname;
+        this.passwd = passwd;
     }
 
     /**
      * SELECT操作。
      * <p>
-     * 通过接口回调异步返回查询结果。
+     * 通过接口回调异步返回查询结果，而异步回调动作依旧是发生在当前线程下的。
+     * <p>
+     * 如果代码有多线程的需求，例如不允许在主线程下创建数据库连接，那么可以传入一个线程池接口{@link Executor}来分配数据库使用的线程，即调用{@link SQLProcessDAO#query(String,
+     * CallBack, Executor)}。
      *
      * @param sql               完整的查询语句
-     * @param resultSetCallBack {@link CallBack <ResultSet>} 回调接口
+     * @param resultSetCallBack 回调接口
      * @see CallBack
      */
     public void query(String sql, CallBack<ResultSet> resultSetCallBack) {
@@ -67,6 +52,7 @@ public class SQLProcessDAO {
         try {
             Class.forName(driver);
             conn = DriverManager.getConnection(url, uname, passwd);
+            System.out.println(sql);
             ps = conn.prepareStatement(sql);
             rs = ps.executeQuery();
             resultSetCallBack.onCall(rs);
@@ -82,6 +68,19 @@ public class SQLProcessDAO {
             }
             closeConnection(conn, ps);
         }
+    }
+
+    /**
+     * SELECT操作。
+     * <p>
+     * 在指定线程池中调度一个线程来执行SELECT操作。
+     *
+     * @param sql               完整的查询语句
+     * @param resultSetCallBack 回调接口
+     * @param executor          线程池
+     */
+    public void query(String sql, CallBack<ResultSet> resultSetCallBack, Executor executor) {
+        executor.execute(() -> query(sql, resultSetCallBack));
     }
 
     /**
